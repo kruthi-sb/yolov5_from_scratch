@@ -26,14 +26,16 @@ class Conv(nn.Module):
 
     default_act = nn.SiLU()  # default activation
     
-    def __init__(self, in_channels, out_channels, kernel_size=1, stride=1, padding=None, groups=1, activation=True):
+    def __init__(self, c1, c2, kernel_size=1, stride=1, padding=None, groups=1, activation=True):
 
         super.__init__() # When initializing a derived class, you can use super() to call the __init__() method of the parent class.
 
         # define layers within
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, same_padding(kernel_size, padding), groups=groups, bias=False) # bias term is not there since we apply batch norm next, which  inherently subtracts out the bias
+        # c1 = in_channels
+        # c2 = out_channels
+        self.conv = nn.Conv2d(c1, c2, kernel_size, stride, same_padding(kernel_size, padding), groups=groups, bias=False) # bias term is not there since we apply batch norm next, which  inherently subtracts out the bias
 
-        self.bn = nn.BatchNorm2d(out_channels)
+        self.bn = nn.BatchNorm2d(c2)
 
         self.activation = self.default_act if activation is True else activation if isinstance(activation, nn.Module) else nn.Identity() 
 
@@ -50,10 +52,49 @@ class Conv(nn.Module):
         return self.activation(self.bn(self.conv(x)))
     
 
-# YOLOv5s Backbone Layer Type 2: C3 
-class C3(nn.Module):
-    def __init__(self ):
+# YOLOv5s Backbone Layer Type 2: BottleNeck
+class Bottelneck(nn.Module):
+    """
+    c1 -> c_ -> c2, where c_ = c2*e, e for expansion factor (say, 0.5)
+
+    x -> conv1 -> conv2 -> _ + x
+
+    skip connection is added iff shortcut is True and c1==c2.
+    o/p = x + conv2(conv1(x)), where '+' for skip connection.
+    """
+    def __init__(self, c1, c2, shortcut=True, groups=1, e=0.5 ):
         super().__init__()
+        c_ = int(c2 * e) # is the no. of o/p channels for cv1.
+        # => eg. c1 = 64, c2 = 128, e = 0.5, then c_ = 128/2 = 64 channels (hidden).
+
+        # define layers
+        self.cv1 = Conv(c1, c_, kernel_size=1, stride=1)
+        self.cv2 = Conv(c_, c2, kernel_size=3, stride=1, groups=groups)
+
+        self.add = shortcut and c1==c2 # whether T/F
+        # adds skip connections iff c1==c2 & shortcut==T
+
+    def forward(self, x):
+        """
+        x is the i/p tensor
+        """
+        return x + self.cv2(self.cv1(x)) if self.add else self.cv2(self.cv1(x))
+    
+
+# YOLOv5s Backbone Layer Type 3: C3
+class C3(nn.Module):
+    """
+    n = #bottleneck blocks inside the C3 module
+    
+
+    """
+    def __init__(self, c1, c2, n=1, shortcut=True, groups=1, e=0.5):
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+
+        self.cv1 = 
+
+
     
 
 
