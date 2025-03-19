@@ -17,9 +17,9 @@ def same_padding(kernel_size, padding=None):
     # in theory, it is p=(kernel_size - 1)/2
     return padding
 
-
 # YOLOv5s Backbone Layer Type 1: Conv 
 class Conv(nn.Module):
+    
     """
     Convolutional -> BatchNorm -> SiLU
     """
@@ -138,8 +138,6 @@ class SPPF(nn.Module):
         # concat -> cv2
         return self.cv2(torch.cat([x_out, pool1, pool2, pool3], dim=1))
     
-    
-
 
 #---------------------------   
 # Build backbone, neck, head
@@ -286,6 +284,7 @@ class YOLOV5S(nn.Module):
             # 22
             # [-1, 10] - models.common.Concat[1]
 
+
             # 23
             # [512, 512, 1, False]
             C3(c1=c2*16, c2=c2*16, e=0.5, n=2, backbone=False)
@@ -293,5 +292,5 @@ class YOLOV5S(nn.Module):
 
     """
     ...pending...
-    add self.head and forward()
+    add self.head and forward() with upsampling and concat
     """
