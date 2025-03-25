@@ -202,21 +202,21 @@ class YOLOV5S(nn.Module):
             #[128, 128, 2] 
             C3(c1=c2*4, c2=c2*4, n=2),
 
+            # SKIP CONNECTION: from here, the output1 gets concatenated with o/p after resize2
+
             # 5
             #[128, 256, 3, 2]  
             Conv(c1=c2*4, c2=c2*8, kernel_size=3, stride=2),
-
-            # from here, the output1 gets concatenated with o/p after resize2
              
             # 6
             #[256, 256, 3] 
             C3(c1=c2*8, c2=c2*8, n=3),
 
+            # SKIP CONNECTION: from here, the output2 get concatenated with o/p after resize1
+
             # 7
             #[256, 512, 3, 2] 
             Conv(c1=c2*8, c2=c2*16, kernel_size=3, stride=2),
-
-            # from here, thr output2 get concatenated with o/p after resize1
 
             # 8
             #[512, 512, 1]   
@@ -227,6 +227,8 @@ class YOLOV5S(nn.Module):
 
             # [512, 512, 5]
             SPPF(c1=c2*16, c2=c2*16)
+
+            # ....
         ]
 
         self.neck = nn.ModuleList() # Initialize internal Module state
@@ -237,12 +239,14 @@ class YOLOV5S(nn.Module):
 
             #-------- Upsampling:
 
+            # o/p from SPPF goes to:
+
             # 10
             # [512, 256, 1, 1]
             Conv(c1=c2*16, c2=c2*8, kernel_size=1, stride=1, padding=0),
 
             # 11
-            # torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']
+            torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']
 
             # 12
             # [-1, 6] -  models.common.Concat[1]
@@ -284,13 +288,47 @@ class YOLOV5S(nn.Module):
             # 22
             # [-1, 10] - models.common.Concat[1]
 
-
             # 23
             # [512, 512, 1, False]
             C3(c1=c2*16, c2=c2*16, e=0.5, n=2, backbone=False)
         ]
 
+        # add self.head here - create instance of HEADS() class
+
+    # make connections from [backbone <--> neck] and 
+    # internal connections in neck from the NECK[upsampling <--> downsampling]
+
+    def forward(self, x): # x is the input tensor
+
+        # make sure that the input tensor has shape [#images_per_batch, 3 channels, width:some multiple of 32,  height:some multiple of 32]
+        assert x.shape[2] % 32 == 0 and x.shape[3] % 32 == 0
+        
+        # store the outputs from backbone that should be concatenated with the layers of neck.
+        backbone_connections = []
+
+        # store the outputs from upsampling of neck that should be concatenated with the the layers of downsampling.
+        neck_connections = []
+
+        # store the end outputs after processing through backbone and neck
+        neck_outputs = []
+
+        # pass the input to the backbone
+        for id, layer in enumerate(self.backbone):
+            # pass to each layer sequencialy
+            x = layer(x)
+
+            # store o/ps from 4th and 6th layer:
+            if id in [4,6]:
+                backbone_connections.append(x)
+
+        # pass o/p from backbone to neck
+        for id, layer in enumerate(self.neck):
+            # 
+
+
+ 
+
     """
     ...pending...
-    add self.head and forward() with upsampling and concat
+    add self.head 
     """
