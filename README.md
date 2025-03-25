@@ -7,7 +7,9 @@ Understanding yolov5 from the ground up and build it from scratch!
 - ```experiment.ipynb``` is empty right now. It is kept to serve the purpose of testing if the architecture is right and works basicially. 
 - ```diagrams``` folder includes the architecture exported from Netron and also the offical Ultralytics architecture.
 
-# Additional note:
-- I have clonned the official YOLOv5 implementation as a reference.
-- I have used venv to set up the environment.
-- Git is used for version control.
+# References:
+- https://github.com/AlessandroMondin/YOLOV5m
+- https://towardsai.net/p/l/yolov5m-implementation-from-scratch-with-pytorch
+- https://github.com/ultralytics/yolov5
+- https://www.youtube.com/watch?v=XRZmynM4nB4&list=PL1u-h-YIOL0sZJsku-vq7cUGbqDEeDK0a&index=9
+
