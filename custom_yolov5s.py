@@ -139,6 +139,19 @@ class SPPF(nn.Module):
         return self.cv2(torch.cat([x_out, pool1, pool2, pool3], dim=1))
     
 
+# YOLOv5s NECK Operation: CONCAT
+class Concat(nn.Module):
+    """
+    concatenates tensors along a specific dimension. (usually along channel dimension)
+    """
+    def __init__(self, dim=1): #concat along the default dim = 1(along the channel dim)
+        super().__init__()
+        self.dim = dim
+
+    # x: is the list of tensors to concatenate.
+    def forward(self, x): 
+        return torch.cat(x, self.dim)
+
 #---------------------------   
 # Build backbone, neck, head
 class YOLOV5S(nn.Module):
@@ -201,8 +214,8 @@ class YOLOV5S(nn.Module):
             # 4
             #[128, 128, 2] 
             C3(c1=c2*4, c2=c2*4, n=2),
-
-            # SKIP CONNECTION: from here, the output1 gets concatenated with o/p after resize2
+ 
+            # SKIP CONNECTION: from here, the output1 gets concatenated with o/p after resize2 (upsampling2)
 
             # 5
             #[128, 256, 3, 2]  
@@ -212,7 +225,7 @@ class YOLOV5S(nn.Module):
             #[256, 256, 3] 
             C3(c1=c2*8, c2=c2*8, n=3),
 
-            # SKIP CONNECTION: from here, the output2 get concatenated with o/p after resize1
+            # SKIP CONNECTION: from here, the output2 get concatenated with o/p after resize1 (upsampling1)
 
             # 7
             #[256, 512, 3, 2] 
@@ -232,8 +245,6 @@ class YOLOV5S(nn.Module):
         ]
 
         self.neck = nn.ModuleList() # Initialize internal Module state
-
-        # NOTE: While Ultralytics YOLOv5 uses nn.Upsample and nn.Concat (to facilitate versioning via .yaml files), in my implementation, I’ve used torch.nn.functional, and therefore, upsampling and concatenation are performed in the forward method.
          
         self.neck += [
 
@@ -246,10 +257,13 @@ class YOLOV5S(nn.Module):
             Conv(c1=c2*16, c2=c2*8, kernel_size=1, stride=1, padding=0),
 
             # 11
-            torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest']
+            torch.nn.modules.upsampling.Upsample(None, 2, 'nearest'), 
+            # mode - nearest: uses the value of the nearest pixel to fill the gap
+            # scale_factor: resize the o/p to 2x
+            # size: None - let the size be calculated automatically from scale_factor.
 
             # 12
-            # [-1, 6] -  models.common.Concat[1]
+            # [-1, 6] -  models.common.Concat[1] - the o/p of layer 6 of the backbone is concatenated with the o/p of upsampling1
 
             # 13
             # [512, 256, 1, False]
@@ -260,10 +274,10 @@ class YOLOV5S(nn.Module):
             Conv(c1=c2*8, c2=c2*4, kernel_size=1, stride=1, padding=0),
 
             # 15
-            # torch.nn.modules.upsampling.Upsample    [None, 2, 'nearest'] 
+            torch.nn.modules.upsampling.Upsample(None, 2, 'nearest'),
 
             # 16
-            # [-1, 4] - models.common.Concat[1]
+            # [-1, 4] - models.common.Concat[1] - the o/p of layer 4 of the backbone is concatenated with the o/p of upsampling2
 
             # 17
             # [256, 128, 1, False] 
@@ -317,13 +331,36 @@ class YOLOV5S(nn.Module):
             # pass to each layer sequencialy
             x = layer(x)
 
-            # store o/ps from 4th and 6th layer:
-            if id in [4,6]:
+            # store o/ps from 4th and 6th layer to backbone_connections:
+            if id in {4,6}:
                 backbone_connections.append(x)
 
         # pass o/p from backbone to neck
         for id, layer in enumerate(self.neck):
-            # 
+            
+            # store o/ps from 11th and 15th layers of neck to neck_connections:
+            #if id in {11,15}:
+                #neck_connections.append(x)
+            
+            # 4th_backbone & 15th_neck (concat)
+            # 6th_backbone & 11th_neck (concat)
+
+            # concat the o/ps from backbone and neck
+            if id == 12:
+                # first concat and then pass to the 12th layer
+                x = torch
+
+
+            
+            # pass to each layer sequencialy
+            else:
+                x = layer(x)
+
+
+
+
+            
+
 
 
  
