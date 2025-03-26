@@ -138,12 +138,18 @@ class SPPF(nn.Module):
         # concat -> cv2
         return self.cv2(torch.cat([x_out, pool1, pool2, pool3], dim=1))
     
+# YOLOv5s HEAD:
+class HEADS(nn.Module):
+    """
+    
+    """
+    
 
-# YOLOv5s NECK Operation: CONCAT
+"""# YOLOv5s NECK Operation: CONCAT
 class Concat(nn.Module):
-    """
-    concatenates tensors along a specific dimension. (usually along channel dimension)
-    """
+    
+    #concatenates tensors along a specific dimension. (usually #along channel dimension)
+    
     def __init__(self, dim=1): #concat along the default dim = 1(along the channel dim)
         super().__init__()
         self.dim = dim
@@ -151,6 +157,7 @@ class Concat(nn.Module):
     # x: is the list of tensors to concatenate.
     def forward(self, x): 
         return torch.cat(x, self.dim)
+"""
 
 #---------------------------   
 # Build backbone, neck, head
@@ -252,59 +259,65 @@ class YOLOV5S(nn.Module):
 
             # o/p from SPPF goes to:
 
-            # 10
+            # 0
             # [512, 256, 1, 1]
             Conv(c1=c2*16, c2=c2*8, kernel_size=1, stride=1, padding=0),
 
-            # 11
+            # store o/p to neck_connections -> downsampling
+            # 0 to 8
+
+            # 1
             torch.nn.modules.upsampling.Upsample(None, 2, 'nearest'), 
             # mode - nearest: uses the value of the nearest pixel to fill the gap
             # scale_factor: resize the o/p to 2x
             # size: None - let the size be calculated automatically from scale_factor.
 
-            # 12
-            # [-1, 6] -  models.common.Concat[1] - the o/p of layer 6 of the backbone is concatenated with the o/p of upsampling1
+    
+            # the o/p of layer 6 of the backbone is concatenated with the o/p of upsampling1
 
-            # 13
+            # 2
             # [512, 256, 1, False]
             C3(c1=c2*16, c2=c2*8, e=0.25, n=2, backbone=False),
 
-            # 14
+            # 3
             # [256, 128, 1, 1]
             Conv(c1=c2*8, c2=c2*4, kernel_size=1, stride=1, padding=0),
 
-            # 15
+            # store o/p to neck_connections -> downsampling 
+            # 3 to 6
+
+            # 4
             torch.nn.modules.upsampling.Upsample(None, 2, 'nearest'),
 
-            # 16
-            # [-1, 4] - models.common.Concat[1] - the o/p of layer 4 of the backbone is concatenated with the o/p of upsampling2
+            # the o/p of layer 4 of the backbone is concatenated with the o/p of upsampling2
 
-            # 17
+            # 5
             # [256, 128, 1, False] 
-            C3(c1=c2*8, c2=c2*4, e=0.25, n=2, backbone=False),
+            C3(c1=c2*8, c2=c2*4, e=0.25, n=2, backbone=False),  # this o/p is fed to head (as bigger feature maps)
+
 
             #-------- Downsampling:
-            # 18
+            # 6
             # [128, 128, 3, 2]  
             Conv(c1=c2*4, c2=c2*4, kernel_size=3, stride=2, padding=1),
 
-            # 19
-            # [-1, 14] - models.common.Concat[1]
+            # the o/p is concatenated with the o/p of 3rd layer in neck
+            # 3 to 6
 
-            # 20
+            # 7
             # [256, 256, 1, False] 
-            C3(c1=c2*8, c2=c2*8, e=0.5, n=2, backbone=False),
+            C3(c1=c2*8, c2=c2*8, e=0.5, n=2, backbone=False), # this o/p is fed to head (as medium feature maps)
 
-            # 21
+            # 8
             # [256, 256, 3, 2]
             Conv(c1=c2*8, c2=c2*8, kernel_size=3, stride=2, padding=1),
 
-            # 22
-            # [-1, 10] - models.common.Concat[1]
+            # the o/p is concatenated with the o/p of 0th layer in neck
+            # 0 to 8
 
-            # 23
+            # 9
             # [512, 512, 1, False]
-            C3(c1=c2*16, c2=c2*16, e=0.5, n=2, backbone=False)
+            C3(c1=c2*16, c2=c2*16, e=0.5, n=2, backbone=False) # this o/p is fed to head (as smaller feature maps)
         ]
 
         # add self.head here - create instance of HEADS() class
@@ -324,7 +337,7 @@ class YOLOV5S(nn.Module):
         neck_connections = []
 
         # store the end outputs after processing through backbone and neck
-        neck_outputs = []
+        inputs_to_head = []
 
         # pass the input to the backbone
         for id, layer in enumerate(self.backbone):
@@ -337,24 +350,52 @@ class YOLOV5S(nn.Module):
 
         # pass o/p from backbone to neck
         for id, layer in enumerate(self.neck):
-            
-            # store o/ps from 11th and 15th layers of neck to neck_connections:
-            #if id in {11,15}:
-                #neck_connections.append(x)
-            
-            # 4th_backbone & 15th_neck (concat)
-            # 6th_backbone & 11th_neck (concat)
 
-            # concat the o/ps from backbone and neck
-            if id == 12:
-                # first concat and then pass to the 12th layer
-                x = torch
+            # UPSAMPLING
 
+            # store the o/ps from 0th and 3th layers of neck (conv1 and 2 layers)
+            if id in {0,3}:
+                # pass through the conv layers
+                x = layer(x) 
+                # store the outputs
+                neck_connections.append(x)
 
+            # get the o/ps from upsampling and concat it with the backbone connections
+            elif id in {1,4}:
+                # pass through the upsampling layers
+                x = layer(x)
+                # concatenate the o/p with backbone
+                x = torch.cat([x, backbone_connections.pop(-1)], dim=1)
+                # 6th layer of backbone + 1th layer of neck. (6th layer of backbone is popped out)
+                # 4th layer of backbone + 4th layer of neck. (4th layer of backbone is popped out)
+
+                # backbone_connections is now empty.
             
-            # pass to each layer sequencialy
+            # DOWNSAMPLING
+
+            # get the o/ps from conv layers in the downsampling
+            elif id in {6,8}:
+                # pass to conv layers
+                x = layer(x)
+                # concatenate the o/p with upsampling o/ps
+                x = torch.cat([x, neck_connections.pop(-1)], dim=1)
+                # 6th layer + 3rd layer
+                # 8th layer + 0th layer
+
+            # INPUTS TO HEAD
+
+            #  If a neck layer is C3 and the idx is greater than 2, we store the output tensor to a list that will be then fed to the model heads to perform a prediction.
+            elif isinstance(layer,C3) and id>4:
+                # pass to C3 
+                x = layer(x)
+                # store the o/ps 
+                inputs_to_head.append(x)
+
+            # pass to each layer sequencially
             else:
                 x = layer(x)
+
+        
 
 
 
