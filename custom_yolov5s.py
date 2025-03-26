@@ -394,19 +394,22 @@ class YOLOV5S(nn.Module):
             # pass to each layer sequencially
             else:
                 x = layer(x)
-
         
+        return x, inputs_to_head
 
 
+if __name__=="__main__":
 
+    # sample input
+    x = torch.rand(1, 3, 640, 640)
 
-            
+    model = YOLOV5S()
+    print("defined model")
 
+    output_x, inputs_to_head = model(x)
+    print("model ran succesfully")
+    print("shape of output_x: ", output_x.shape)
+    for i in inputs_to_head:
+        print("shape of inputs to head: ", i.shape)
 
-
- 
-
-    """
-    ...pending...
-    add self.head 
-    """
+    print(model) # prints the model architecture
