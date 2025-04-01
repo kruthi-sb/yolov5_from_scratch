@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import config
+import time
 
 # utils
 def same_padding(kernel_size, padding=None):
@@ -139,62 +140,67 @@ class SPPF(nn.Module):
         # concat -> cv2
         return self.cv2(torch.cat([x_out, pool1, pool2, pool3], dim=1))
     
-# YOLOv5s HEAD:
+# YOLOv5s Detection HEAD:
 class DETECT(nn.Module):
     """
-    
+    1. scale down the anchors in image scale to the feature scale.
+    2. pass the inputs_to_head to conv, reshape and transpose. 
     """
+    # anchors are defined as a list of tuples in config.py
+    # channels: (32*4, 32*8, 32*16) = (128, 256, 512) will be given as input while calling YOLOv5s class.
+    def __init__(self, n_classes=80, anchors=(), channels=()):
+        super().__init__()
+        self.n_classes = n_classes # number of classes = 80 for coco
+        self.n_layer = len(anchors) #3 detection layers
+        self.n_aspect = len(anchors[0]) # 3 aspect ratios per anchor size (detection layer).
+        self.stride = [8, 16, 32] # stride for each detection layer
+        # NOTE: stride is calculated as: original image size / feature map size
+        # eg. 640/80 = 8, 640/40 = 16, 640/20 = 32
 
-
-# from scource:
-class HEADS(nn.Module):
-    def __init__(self, nc=80, anchors=(), ch=()):  # detection layer
-        super(HEADS, self).__init__()
-        self.nc = nc  # number of classes
-        self.nl = len(anchors)  # number of detection layers
-        self.naxs = len(anchors[0])
-
-        # https://pytorch.org/docs/stable/generated/torch.nn.Module.html command+f register_buffer
-        # has the same result as self.anchors = anchors but, it's a way to register a buffer (make
-        # a variable available in runtime) that should not be considered a model parameter
-        self.stride = [8, 16, 32]
-
+        # Since the anchors are defined in the image space, we need to bring them to the feature space by scaling them with the stride.
         # anchors are divided by the stride (anchors_for_head_1/8, anchors_for_head_1/16 etc.)
-        anchors_ = torch.tensor(anchors).float().view(self.nl, -1, 2) / torch.tensor(self.stride).repeat(6, 1).T.reshape(3, 3, 2)
-        self.register_buffer('anchors', anchors_)  # shape(nl,na,2)
+        # anchors -> tensors -> float -> view -> divide by stride -> repeat -> reshape
+        # view: view the tensor as a different shape without changing the data.
+        # repeat: repeat the tensor along the specified dimension.
+        anchors_featurespace = torch.tensor(anchors).float().view(self.n_layer, -1, 2) / torch.tensor(self.stride).repeat(6, 1).T.reshape(3, 3, 2) # find explaination in experiment.ipynb
 
-        self.out_convs = nn.ModuleList()
-        for in_channels in ch:
-            self.out_convs += [
-                nn.Conv2d(in_channels=in_channels, out_channels=(5+self.nc) * self.naxs, kernel_size=1)
+        # register_buffer: 
+        # If you have parameters in your model, which should be saved and restored in the state_dict, but not trained by the optimizer, you should register them as buffers. 
+        # Buffers won't be returned in model.parameters(), so that the optimizer won't have a change to update them.
+        self.register_buffer('anchors', anchors_featurespace) # shape(n_layer, n_aspect, 2)
+
+        # convolve the feature maps coming from the pan: ( this is done inorder to get 5+80 * 3 = 255 channels)
+        # we have:
+        # torch.Size([1, 128, 80, 80]) 
+        # torch.Size([1, 256, 40, 40]) 
+        # torch.Size([1, 512, 20, 20])
+        # channels = (128, 256, 512)
+        self.conv_out = nn.ModuleList() 
+        # for 3 channels, we have 3 conv layers 
+        # out_channels = 85*3 = 255
+        for c1 in channels:
+            self.conv_out += [
+                nn.Conv2d(in_channels=c1, out_channels=(5+self.n_classes) * self.n_aspect, kernel_size=1) # 1x1 conv
             ]
+        # after conv, we have 3 feature maps of shape: (all with same no of channels)
+        # torch.Size([1, 255, 80, 80])
+        # torch.Size([1, 255, 40, 40])
+        # torch.Size([1, 255, 20, 20])
 
     def forward(self, x):
-        for i in range(self.nl):
-            # performs out_convolution and stores the result in place
-            x[i] = self.out_convs[i](x[i])
-
-            bs, _, grid_y, grid_x = x[i].shape
-            # reshaping output to be (bs, n_scale_predictions, n_grid_y, n_grid_x, 5 + num_classes)
-            # why .permute? Here https://github.com/ultralytics/yolov5/issues/10524#issuecomment-1356822063
-            x[i] = x[i].view(bs, self.naxs, (5+self.nc), grid_y, grid_x).permute(0, 1, 3, 4, 2).contiguous()
-
-        return x
-    
-
-"""# YOLOv5s NECK Operation: CONCAT
-class Concat(nn.Module):
-    
-    #concatenates tensors along a specific dimension. (usually #along channel dimension)
-    
-    def __init__(self, dim=1): #concat along the default dim = 1(along the channel dim)
-        super().__init__()
-        self.dim = dim
-
-    # x: is the list of tensors to concatenate.
-    def forward(self, x): 
-        return torch.cat(x, self.dim)
-"""
+        # x is a list of inputs to head: stored as inputs_to_head
+        # store the outputs after passing through convs
+        detection_outputs = []
+        for i, conv in enumerate(self.conv_out):
+            # get the shape of the passed input to head
+            batch_size, channels, grid_x, grid_y = x[i].shape
+            detection_outputs.append(
+                conv(x[i]) # pass through conv
+                .view(batch_size, self.n_aspect, (5+self.n_classes), grid_x, grid_y ) # we get eg. ([1,3,85,20,20])
+                .permute(0,1,3,4,2) # trnapose to eg. ([1,3,20,20,85])
+                .contiguous() # ensures that a tensor is stored in contiguous memory layout. (after permute and transpose operations, memory is not reorganized) also (non-contiguous tensors can slow down operations.)
+            )
+        return detection_outputs
 
 #---------------------------   
 # Build backbone, neck, head
@@ -210,6 +216,7 @@ class YOLOV5S(nn.Module):
     [
         [-1, 1, Conv, [64, 6, 2, 2]], # 0-P1/2  --> layer 0, 'P' = feature map
         [-1, 1, Conv, [128, 3, 2]], # 1-P2/4
+        
         [-1, 3, C3, [128]],
         [-1, 1, Conv, [256, 3, 2]], # 3-P3/8
         [-1, 6, C3, [256]],
@@ -232,7 +239,7 @@ class YOLOV5S(nn.Module):
 
     """
 
-    def __init__(self, c2=32, nc = 80):
+    def __init__(self, c2=32, n_classes = 80, anchors=(), channels=()):
         super().__init__()
         self.backbone = nn.ModuleList()  # Holds submodules in a list. Initialize internal Module state.
 
@@ -284,8 +291,6 @@ class YOLOV5S(nn.Module):
 
             # [512, 512, 5]
             SPPF(c1=c2*16, c2=c2*16)
-
-            # ....
         ]
 
         self.neck = nn.ModuleList() # Initialize internal Module state
@@ -358,7 +363,7 @@ class YOLOV5S(nn.Module):
         ]
 
         # add self.head here - create instance of HEADS() class
-        self.head = HEADS(nc=nc, anchors=anchors, ch=ch)
+        self.head = DETECT(n_classes=n_classes, anchors=anchors, channels=channels)
 
     # make connections from [backbone <--> neck] and 
     # internal connections in neck from the NECK[upsampling <--> downsampling]
@@ -433,21 +438,35 @@ class YOLOV5S(nn.Module):
             else:
                 x = layer(x)
         
-        return x, inputs_to_head
+        return self.head(inputs_to_head)
 
 
 if __name__=="__main__":
 
-    # sample input
-    x = torch.rand(1, 3, 640, 640)
+    # SET UP:
+    batch_size = 1
+    image_height = 640
+    image_width = 640
+    n_classes = 80
+    c2 = 32
+    channels = (c2*4, c2*8, c2*16)
     anchors = config.ANCHORS
-    model = YOLOV5S()
-    print("defined model")
 
-    output_x, inputs_to_head = model(x)
-    print("model ran succesfully")
-    print("shape of output_x: ", output_x.shape)
-    for i in inputs_to_head:
-        print("shape of inputs to head: ", i.shape)
+    # sample input
+    x = torch.rand(batch_size, 3, image_width, image_height)  
+    
+    # model
+    model = YOLOV5S(c2=c2, n_classes=n_classes, anchors=anchors, channels=channels)
+    
+    start = time.time()
+    out = model(x)
+    end = time.time()
 
-    print(model) # prints the model architecture
+    assert out[0].shape == (batch_size, 3, image_height//8, image_width//8, n_classes + 5)
+    assert out[1].shape == (batch_size, 3, image_height//16, image_width//16, n_classes + 5)
+    assert out[2].shape == (batch_size, 3, image_height//32, image_width//32, n_classes + 5)
+
+    print("Success!")
+    print("feedforward took {:.2f} seconds".format(end - start))
+    print("\n")
+    print("shape of output: \n",out[0].shape,"\n", out[1].shape,"\n", out[2].shape,"\n")
