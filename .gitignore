@@ -176,3 +176,4 @@ cython_debug/
 
 # custom
 yolov5/
+.onnx/
