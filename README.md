@@ -4,8 +4,11 @@ Understanding yolov5 from the ground up and build it from scratch!
 # NOTE:
 - ```cumstom_yolov5s.py``` Consists of the actual model architecture implementation.
 - ```dev.ipynb``` Includes my first steps in approaching the problem by understnading the dataset format in tensors, model architecture, output shapes in each forwardpass of layers, and finally exporting the model in onnx format to visualize it on Netron.
-- ```experiment.ipynb``` is empty right now. It is kept to serve the purpose of testing if the architecture is right and works basicially. 
+- ```experiment.ipynb``` is for experimenting with functions, understanding operations, and testing the model architecute.
 - ```diagrams``` folder includes the architecture exported from Netron and also the offical Ultralytics architecture.
+- ```test_custom_implementation.ipynb``` is for testing the custom implementation of yolov5s model.
+- ```output_images``` folder includes the output feauture maps of the model at different stages of the forward pass. 
+
 
 # References:
 - https://github.com/AlessandroMondin/YOLOV5m
